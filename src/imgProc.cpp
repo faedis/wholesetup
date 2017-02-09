@@ -3,6 +3,7 @@
 #include <std_msgs/Float64MultiArray.h>
 #include <std_msgs/Float64.h>
 #include <std_msgs/Int16.h>
+#include <std_msgs/Bool.h>
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/videoio.hpp"
 #include "opencv2/imgproc.hpp"
@@ -27,7 +28,7 @@ int cHeight = frHeight/2;
 int fps = 30;
 float focusmeasure = 0;
 Rect targetRect;
-bool detect_flag = false;
+bool detectflag = false;
 bool firstloop_flag = false;
 bool PTUcontrol = false;
 double Kp = 0;
@@ -59,7 +60,7 @@ double loopcounterzoom = 0;
 void DetectColor(Mat frame) {
 	Mat  frameThr, frameHSV;
 	cvtColor(frame, frameHSV, COLOR_BGR2HSV);
-	inRange(frameHSV, Scalar(80, 40, 60), Scalar(115, 255, 255), frameThr);
+	inRange(frameHSV, Scalar(75, 40, 60), Scalar(105, 255, 255), frameThr);
 	// morph opening
 	erode(frameThr, frameThr, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
 	dilate(frameThr, frameThr, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
@@ -91,7 +92,7 @@ void DetectColor(Mat frame) {
 			u2 = -(Kp*e2 + Ki*ie2)/ tRes;
 		}
 //		cout <<targetRect.x << " " <<targetRect.y<< " "  << targetRect.width+targetRect.x<< " "  << targetRect.height+targetRect.y << "\n";
-		detect_flag = true;
+		detectflag = true;
 	}
 	else {
 		e1 = 0;
@@ -103,7 +104,7 @@ void DetectColor(Mat frame) {
 		u1 = 0 ;
 		u2 = 0;
 		firstloop_flag = false;
-		detect_flag = false;
+		detectflag = false;
 		target = Point(cWidth, cHeight);
 	}
 
@@ -171,13 +172,14 @@ int main(int argc, char **argv){
 	ros::Publisher ptumsg_pub = n.advertise<std_msgs::Float64MultiArray>("ptumsg",1); 
 	ros::Publisher focus_pub = n.advertise<std_msgs::Float64>("focusmsg",1); 
 	ros::Publisher zoom_pub = n.advertise<std_msgs::Int16>("zoommsg",1);
-
+	ros::Publisher detect_pub = n.advertise<std_msgs::Bool>("detectmsg",1);
+	
+	std_msgs::Bool detectmsg;
 	std_msgs::Float64 focusmsg;
 	std_msgs::Float64MultiArray ptumsg;
 	std_msgs::Int16 zoommsg;
 	zoommsg.data = 170;
 	ptumsg.data.resize(2);
-//ros::Rate loop_rate(10);
 
 	VideoCapture cap;
 	cap.open(0);
@@ -187,7 +189,7 @@ int main(int argc, char **argv){
 	}
 	Mat frame, grayframe;
 	string winName = "Preview";
-	namedWindow(winName,WINDOW_AUTOSIZE);
+	namedWindow(winName,WINDOW_KEEPRATIO);
 	cap.set(CAP_PROP_FPS,fps);
 	cap.set(CAP_PROP_FRAME_HEIGHT,frHeight);
 	cap.set(CAP_PROP_FRAME_WIDTH,frWidth);
@@ -209,7 +211,7 @@ int main(int argc, char **argv){
 		cvtColor(frame, grayframe, CV_BGR2GRAY);
 		DetectColor(frame);
 		PTUSpeedControl();
-		if (!detect_flag){
+		if (!detectflag){
 			focusmeasure = LaplaceVarFocus(grayframe);
 		}
 		else{
@@ -257,25 +259,38 @@ int main(int argc, char **argv){
 		ptumsg.data[1] = 0;
 		}
 		// set zoom msg
-		if(detect_flag){
+		if(detectflag){
 			loopcounterzoom++;
 			if(loopcounterzoom > 119)zoomaverage +=tside;
 			if(loopcounterzoom > 149){
-				zoomaverage /= loopcounterzoom;
-				if(zoomaverage > 110) zoommsg.data+=3;
-				else if (zoomaverage<90) zoommsg.data-=3;
-				zoomaverage=0, loopcounterzoom = 0;
+				zoomaverage /= loopcounterzoom-119;
+				if(zoomaverage > 210){
+					zoommsg.data+=3;
+					zoommsg.data-=3;
+				}
+				if (zoomaverage<200) {
+					zoommsg.data-=3;
+				}
+				loopcounterzoom = 0;
+				zoomaverage=0,
 				zoommsg.data = min((int)zoommsg.data,(int)170);
 				zoommsg.data = max((int)zoommsg.data,(int)10);
 				zoom_pub.publish(zoommsg);
 			}
-		
 		}
+		else {
+			loopcounterzoom = 0;
+			zoommsg.data = 170;
+		}
+		// set detect msg
+		detectmsg.data = detectflag;
+
 
 
 		// publish
 		ptumsg_pub.publish(ptumsg);
 		focus_pub.publish(focusmsg);
+		detect_pub.publish(detectmsg);
 
 	}
 	return 0;

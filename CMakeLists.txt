@@ -17,6 +17,7 @@ add_message_files(
   FocusVal.msg
   PtuVals.msg
   ZoomVal.msg
+  DetectBool.msg
 #  TargetPoint.msg  
 )
 ## Generate added messages and services with any dependencies listed here
