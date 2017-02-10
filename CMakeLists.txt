@@ -18,6 +18,7 @@ add_message_files(
   PtuVals.msg
   ZoomVal.msg
   DetectBool.msg
+  PtuHomeBool.msg
 #  TargetPoint.msg  
 )
 ## Generate added messages and services with any dependencies listed here
