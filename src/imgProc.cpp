@@ -48,7 +48,7 @@ de1,		// derivative of error phi
 de2,		// derivative of error theta
 t = 0,		// current time
 ot = 0,		// previous time
-dt = 0.032;	// time step = querry and send command
+dt = 0.033;	// time step = querry and send command
 double u1;	// pan input
 double u2;	// tilt input
 double tside; 	// target rect side length
@@ -74,8 +74,8 @@ void DetectColor(Mat frame) {
 		double tArea = frameMom.m00;
 		tside = sqrt(tArea);
 		target = Point(frameMom.m10 / tArea, frameMom.m01 / tArea);
-		e1 = atan((target.x - cWidth)*tan(alpha1) / cWidth);
-		e2 = atan((target.y - cHeight)*tan(alpha2) / cHeight);
+		e1 = alpha1 * (double)(target.x - cWidth)/(double)cWidth;	//atan((target.x - cWidth)*tan(alpha1) / cWidth);
+		e2 = alpha2 * (double)(target.y - cHeight)/(double)cHeight;	//atan((target.y - cHeight)*tan(alpha2) / cHeight);
 		ie1 += e1*dt;
 		ie2 += e2*dt;
 		de1 = (e1 - oe1) / dt;
@@ -127,7 +127,7 @@ void PTUSpeedControl() {
 	else if (abs(u1) > 10000) u1 = copysign(10000, u1);
 	//u2	
 	if (abs(u2) < 240) {
-		if (abs(u1) > 0.00244) { // 0.0174533 corresponds to 1deg, 0.03491, 0.00244 = 0.14deg
+		if (abs(e2) > 4*0.00244) { // 0.0174533 corresponds to 1deg, 0.03491, 0.00244 = 0.14deg
 			u2 = copysign(240, u2);
 		}
 		else {
@@ -173,7 +173,9 @@ int main(int argc, char **argv){
 	ros::Publisher focus_pub = n.advertise<std_msgs::Float64>("focusmsg",1); 
 	ros::Publisher zoom_pub = n.advertise<std_msgs::Int16>("zoommsg",1);
 	ros::Publisher detect_pub = n.advertise<std_msgs::Bool>("detectmsg",1);
-	
+	ros::Publisher ptuhomemsg_pub = n.advertise<std_msgs::Bool>("ptuhomemsg",1);
+
+	std_msgs::Bool ptuhomemsg;	
 	std_msgs::Bool detectmsg;
 	std_msgs::Float64 focusmsg;
 	std_msgs::Float64MultiArray ptumsg;
@@ -203,7 +205,7 @@ int main(int argc, char **argv){
 
 		gettimeofday(&t2, NULL);
 		elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
-    		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+    	elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
     		//cout << elapsedTime << " ms.\n";
 		gettimeofday(&t1, NULL);
 	
@@ -231,10 +233,10 @@ int main(int argc, char **argv){
 		imshow(winName,frame);
 		int c = waitKey(1);
 		if(c == 27) break;
-		if(c == 115){
+		if(c == 115){ //s: start ptu control
 			PTUcontrol ^= true;
 		}
-		if(c == 112){
+		if(c == 112){ // p 
 			ptumsg.data[0] = 0;
 			ptumsg.data[1] = 0;
 			ptumsg_pub.publish(ptumsg);
@@ -245,14 +247,24 @@ int main(int argc, char **argv){
 			cin >> Kp;
 			cout << "\n New gain is: " << Kp << "\n";
 		}
+		if(c == 114){ // r: rehome ptu
+			ptumsg.data[0] = 0;
+			ptumsg.data[1] = 0;
+			ptumsg_pub.publish(ptumsg);
+			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0;
+			firstloop_flag = false;
+			PTUcontrol = false;
+			ptuhomemsg.data = true;
+			ptuhomemsg_pub.publish(ptuhomemsg);
+		}
 		// set focus msg
 		focusmsg.data = focusmeasure;
 		// set ptu msg
 		if(PTUcontrol){
 		ptumsg.data[0] = u1;
 		ptumsg.data[1] = u2;
-		loopCounter++;
-		cout<< loopCounter<< "\n";
+		//loopCounter++;
+		//cout<< loopCounter<< "\n";
 		}
 		else{
 		ptumsg.data[0] = 0;
