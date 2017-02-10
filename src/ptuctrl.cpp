@@ -4,6 +4,7 @@
 #include <string>
 #include <ros/ros.h>
 #include <std_msgs/Float64MultiArray.h>
+#include <std_msgs/Bool.h>
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <unistd.h>
@@ -29,9 +30,10 @@ double elapsedTime;
 
 
 
-signed short int panSpeed, tiltSpeed, val;
+signed short int panSpeed, tiltSpeed, val, panZero = 0, tiltZero=0;
 signed short int maxPos = 0;
 
+int zerocounter = 0;
 bool firstloop_flag = false;
 bool firstUse = false;
 int loopCounter = 0;
@@ -45,10 +47,24 @@ void ptuCallback(const std_msgs::Float64MultiArray::ConstPtr& ptumsg){
 	panSpeed = ptumsg->data[0];
 	tiltSpeed = ptumsg->data[1];
 	ptu_set_desired_velocities(panSpeed, tiltSpeed);
-	if(panSpeed!=0){
-		loopCounter++;
-		cout << loopCounter << "\n";
+	if(panSpeed && tiltSpeed == 0){
+		zerocounter++;
+		if(zerocounter>30){
+			zerocounter =0;
+			val = 1000;
+			ptu_set_desired_velocities(val, val);
+			set_desired_abs_positions(&panZero,&tiltZero);
+			await_completion();
+		}
 	}
+	else zerocounter =  0;
+}
+
+void ptuHomeCallback(const std_msgs::Bool::ConstPtr& ptuhomemsg){
+			val = 1000;
+			ptu_set_desired_velocities(val, val);
+			set_desired_abs_positions(&panZero,&tiltZero);
+			await_completion();
 }
 
 int main( int argc, char** argv ) {
@@ -152,6 +168,7 @@ int main( int argc, char** argv ) {
 	ros::init(argc, argv, "ptuctrl_node");
 	ros::NodeHandle n;
 	ros::Subscriber ptusub = n.subscribe("ptumsg",1,ptuCallback);
+	ros::Subscriber ptuhomesub = n.subscribe("ptuhomemsg",1,ptuHomeCallback);
 	ros::spin();
 
 

@@ -2,6 +2,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <std_msgs/Float64.h>
 #include <std_msgs/Int16.h>
+#include <std_msgs/Bool.h>
 //#include <geometry_msgs/Point.h>
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/videoio.hpp"
@@ -36,29 +37,30 @@ int serial_fd;
 #define OFF 0
 #define ON 1
 
-int framecounter = 0;
-int zoomframecounter = 0;
-int focus, focusMax, zoom;
-int focusBasestep=30;
-int focusStep = focusBasestep;
-bool direction, dirChanged; // (NEAR or FAR)
-double sharpness, sharpnessOld;
-double sharpnessScanMax;
-bool scanfocus = ON;
-bool controlfocus = OFF;
-bool movefocus = OFF;
-bool largeDelay = ON;
-int delayThreshold;
-int focusScanMax;
-int lTh = 0; // lower hystheresis threshold
-int hTh = 30; // higher hystheresis trheshold
+int focus, zoom = 170, zoommax = 170;
+int focmin = 400;
+int focmax = 800;
+int focrange = 100;
+int focrangecenter;
+int lfoc, hfoc;
+int focusstep = 2;
+int delay;
+int smalldelay = 7;
+int largedelay = 2*delay;
+bool detectflag = false, scanfocus = true, direction = FAR,firstscan = true;
+int scanfocmax;
+int focuscounter = 0;
+int zoomcounter = 0;
+int notdetectcounter = 0;
+double sharpness, sharpnessold = 0;
+
 
 void sendFocus(){
 	ostringstream cmd_buff;
 	cmd_buff << ">f,"<<focus<<"<";
 	string cmd = cmd_buff.str();
 	write(serial_fd,cmd.c_str(),cmd.length());
-	ROS_INFO("Sent focus: [%i], Sharpness [%f]", focus,sharpness);
+//	ROS_INFO("Sent focus: [%i], Sharpness [%f]", focus,sharpness);
 	//cout<<"Sent focus command: "<<cmd<<endl;
 }
 void sendZoom(){
@@ -69,92 +71,74 @@ void sendZoom(){
 	//ROS_INFO("Sent zoom: [%i]", zoom);
 	//cout<<"Sent focus command: "<<cmd<<endl;
 }
-void focusScan() {
 
-	if (largeDelay) {
-			sharpnessScanMax = 0;
-			focusScanMax = 0;
-			focus = 300;
-			sendFocus();
-			delayThreshold = 35;
-			largeDelay = OFF;
-		}
-	if(!largeDelay & (framecounter>delayThreshold)){
-		framecounter = 0;
-		delayThreshold = 7;
+void scanFocus(){
 
-		if (sharpness > sharpnessScanMax) {
-		// this must be improved at some point, but might be enough for lab tests
-			sharpnessScanMax = sharpness;
-			focusScanMax = focus;
-		//	cout << "focus: " << focus << "sharpness: " << sharpness << "\n";
+	if(firstscan){
+		delay = largedelay;
+		focus = lfoc;
+		sendFocus();
+		firstscan = false;
+	}
+	if(focuscounter>delay){
+		delay = smalldelay;
+		focuscounter = 0;
+		if(sharpness>sharpnessold){
+			scanfocmax = focus;
 		}
-		if (focus < 800) {
-			focus += 100;
+		focus += 50;
+		if(focus>hfoc){
+			scanfocus = false;
+			focus = scanfocmax;
+			firstscan  = true;
+		}
+		else{
 			sendFocus();
-		}
-		else {
-			focus = focusScanMax - 50;
-			sharpnessOld = sharpnessScanMax;
-			sendFocus();
-			cout << focus << "\n";
-			scanfocus = OFF;
-			largeDelay = ON;
-			controlfocus = ON;
-		}
-	}
-}
-void controlFocus() {
-	if (framecounter > 7) {
-		framecounter = 0;
-		if (sharpness < sharpnessOld) {
-			direction = !direction;
-			focusStep *= 0.8;
-			focusStep = max(focusStep, 2);
-			dirChanged = true;
-		}
-		movefocus = ON;
-	
-		if (abs(sharpness - sharpnessOld) > 0.05) {
-			if (sharpness < sharpnessOld) {
-				direction = !direction;
-				if (dirChanged == true) {
-					focusStep = ceil((double)focusStep / 2.0);
-				}
-				dirChanged = true;
 			}
-			else {
-				dirChanged = false;
-				focusStep *= 2;
-				if (focusStep > focusBasestep) focusStep = focusBasestep;
-			}
-		movefocus = ON;
+		sharpnessold = sharpness;
+	}
+}
+
+void controlFocus(){
+	if(focuscounter>smalldelay){
+	focuscounter = 0;
+		if(sharpness<sharpnessold){
+			direction ^= direction;
 		}
-	sharpnessOld = sharpness;
+		if(direction == NEAR) focus -= focusstep;
+		else focus += focusstep;
+		focus = min(hfoc, focus);
+		focus = max(lfoc, focus);
+		sendFocus();
 	}
 }
-void moveFocus() {	
-	if (direction == FAR) {
-		focus = focus + focusStep;
-	}
-	else if (direction == NEAR) {
-		focus = focus - focusStep;
-	}
-	if (focus < 300)focus = 300;
-	else if (focus > 800)focus = 800;
-	if (sharpness - sharpnessScanMax < -1) {
-		focusStep = focusBasestep;
-	}
-	sendFocus();	
-	movefocus = OFF;
+
+void detectCallback(const std_msgs::Bool::ConstPtr& detectmsg){
+	detectflag = detectmsg->data;
 }
+
 void focusCallback(const std_msgs::Float64::ConstPtr& focusmsg){
 	sharpness = focusmsg->data;
-	framecounter++;
-	if(scanfocus)focusScan();
-	else if(controlfocus) controlFocus();
-	if(movefocus) moveFocus();
+	focuscounter++;
+	if(!detectflag){
+		notdetectcounter++;
+		scanfocus = true;
 
+		if(notdetectcounter > 5){
+			lfoc = focmin;
+			hfoc = focmax;
+			notdetectcounter = 0;
+		}
+		else{
+			lfoc =  (1-(double)zoom/(double)zoommax)*300+400;
+			hfoc =  (1-(double)zoom/(double)zoommax)*300+500;
+		}
+	}
+	if (scanfocus){
+		 scanFocus();
+	}
+	else controlFocus();
+	
 }
 void zoomCallback(const std_msgs::Int16::ConstPtr& zoommsg){
 	zoom = zoommsg->data;
@@ -195,7 +179,7 @@ int main( int argc, char** argv ) {
 	
 	ros::Subscriber focussub = n.subscribe("focusmsg",1,focusCallback);
 	ros::Subscriber zoomsub = n.subscribe("zoommsg",1,zoomCallback);
-
+	ros::Subscriber detectsub = n.subscribe("detectmsg",1,detectCallback);
 	ros::spin();
 
 	return(0);

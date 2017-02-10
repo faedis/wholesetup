@@ -3,6 +3,7 @@
 #include <std_msgs/Float64MultiArray.h>
 #include <std_msgs/Float64.h>
 #include <std_msgs/Int16.h>
+#include <std_msgs/Bool.h>
 #include <opencv2/highgui/highgui.hpp>
 #include "opencv2/videoio.hpp"
 #include "opencv2/imgproc.hpp"
@@ -29,7 +30,7 @@ int cHeight = frHeight/2;
 int fps = 30;
 float focusmeasure = 0;
 Rect targetRect;
-bool detect_flag = false;
+bool detectflag = false;
 bool firstloop_flag = false;
 bool PTUcontrol = false;
 double Kp = 0;
@@ -49,7 +50,7 @@ de1,		// derivative of error phi
 de2,		// derivative of error theta
 t = 0,		// current time
 ot = 0,		// previous time
-dt = 0.032;	// time step = querry and send command
+dt = 0.033;	// time step = querry and send command
 double u1;	// pan input
 double u2;	// tilt input
 double tside; 	// target rect side length
@@ -72,7 +73,7 @@ vector<double> dVec;
 void DetectColor(Mat frame) {
 	Mat  frameThr, frameHSV;
 	cvtColor(frame, frameHSV, COLOR_BGR2HSV);
-	inRange(frameHSV, Scalar(80, 40, 60), Scalar(115, 255, 255), frameThr);
+	inRange(frameHSV, Scalar(75, 40, 60), Scalar(105, 255, 255), frameThr);
 	// morph opening
 	erode(frameThr, frameThr, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
 	dilate(frameThr, frameThr, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
@@ -86,8 +87,8 @@ void DetectColor(Mat frame) {
 		double tArea = frameMom.m00;
 		tside = sqrt(tArea);
 		target = Point(frameMom.m10 / tArea, frameMom.m01 / tArea);
-		e1 = atan((target.x - cWidth)*tan(alpha1) / cWidth);
-		e2 = atan((target.y - cHeight)*tan(alpha2) / cHeight);
+		e1 = alpha1 * (double)(target.x - cWidth)/(double)cWidth;	//atan((target.x - cWidth)*tan(alpha1) / cWidth);
+		e2 = alpha2 * (double)(target.y - cHeight)/(double)cHeight;	//atan((target.y - cHeight)*tan(alpha2) / cHeight);
 		ie1 += e1*dt;
 		ie2 += e2*dt;
 		de1 = (e1 - oe1) / dt;
@@ -104,7 +105,7 @@ void DetectColor(Mat frame) {
 			u2 = -(Kp*e2 + Ki*ie2)/ tRes;
 		}
 //		cout <<targetRect.x << " " <<targetRect.y<< " "  << targetRect.width+targetRect.x<< " "  << targetRect.height+targetRect.y << "\n";
-		detect_flag = true;
+		detectflag = true;
 	}
 	else {
 		e1 = 0;
@@ -116,7 +117,7 @@ void DetectColor(Mat frame) {
 		u1 = 0 ;
 		u2 = 0;
 		firstloop_flag = false;
-		detect_flag = false;
+		detectflag = false;
 		target = Point(cWidth, cHeight);
 	}
 
@@ -139,7 +140,7 @@ void PTUSpeedControl() {
 	else if (abs(u1) > 10000) u1 = copysign(10000, u1);
 	//u2	
 	if (abs(u2) < 240) {
-		if (abs(u1) > 0.00244) { // 0.0174533 corresponds to 1deg, 0.03491, 0.00244 = 0.14deg
+		if (abs(e2) > 4*0.00244) { // 0.0174533 corresponds to 1deg, 0.03491, 0.00244 = 0.14deg
 			u2 = copysign(240, u2);
 		}
 		else {
@@ -193,13 +194,16 @@ int main(int argc, char **argv){
 	ros::Publisher ptumsg_pub = n.advertise<std_msgs::Float64MultiArray>("ptumsg",1); 
 	ros::Publisher focus_pub = n.advertise<std_msgs::Float64>("focusmsg",1); 
 	ros::Publisher zoom_pub = n.advertise<std_msgs::Int16>("zoommsg",1);
+	ros::Publisher detect_pub = n.advertise<std_msgs::Bool>("detectmsg",1);
+	ros::Publisher ptuhomemsg_pub = n.advertise<std_msgs::Bool>("ptuhomemsg",1);
 
+	std_msgs::Bool ptuhomemsg;	
+	std_msgs::Bool detectmsg;
 	std_msgs::Float64 focusmsg;
 	std_msgs::Float64MultiArray ptumsg;
 	std_msgs::Int16 zoommsg;
 	zoommsg.data = 170;
 	ptumsg.data.resize(2);
-//ros::Rate loop_rate(10);
 
 	VideoCapture cap;
 	cap.open(0);
@@ -209,7 +213,7 @@ int main(int argc, char **argv){
 	}
 	Mat frame, grayframe;
 	string winName = "Preview";
-	namedWindow(winName,WINDOW_AUTOSIZE);
+	namedWindow(winName,WINDOW_KEEPRATIO);
 	cap.set(CAP_PROP_FPS,fps);
 	cap.set(CAP_PROP_FRAME_HEIGHT,frHeight);
 	cap.set(CAP_PROP_FRAME_WIDTH,frWidth);
@@ -221,14 +225,15 @@ int main(int argc, char **argv){
 	while(true){	
 
 
-    		//cout << elapsedTime << " ms.\n";
+
+  		//cout << elapsedTime << " ms.\n";
 		gettimeofday(&t1, NULL);
 	
 		cap>>frame;
 		cvtColor(frame, grayframe, CV_BGR2GRAY);
 		DetectColor(frame);
 		PTUSpeedControl();
-		if (!detect_flag){
+		if (!detectflag){
 			focusmeasure = LaplaceVarFocus(grayframe);
 		}
 		else{
@@ -248,7 +253,7 @@ int main(int argc, char **argv){
 		imshow(winName,frame);
 		int c = waitKey(1);
 		if(c == 27) break;
-		if(c == 115){
+		if(c == 115){ //s: start ptu control
 			PTUcontrol ^= true;
 		gettimeofday(&t1, NULL);
 		}
@@ -272,10 +277,11 @@ int main(int argc, char **argv){
 			PTUcontrol = false;
 			cout << "Please enter the desired differentiator gain (double, now: " << Kd << " )\n";
 
-			cin >> Kp;
+			cin >> Kd;
 			cout << "\n New PID is: " << Kp << " " <<  Ki<< " "<< Kd<<"\n";
 		}
-		if(c == 105){ // i: set new integrator gain
+
+		if(c == 112){ // p 
 			ptumsg.data[0] = 0;
 			ptumsg.data[1] = 0;
 			ptumsg_pub.publish(ptumsg);
@@ -283,9 +289,7 @@ int main(int argc, char **argv){
 			firstloop_flag = false;
 			PTUcontrol = false;
 			cout << "Please enter the desired integrator gain (double): \n";
- 
-
-			cin >> Kp;
+			cin >> Ki;
 			cout << "\n New PID is: " << Kp << " " <<  Ki<< " "<< Kd<<"\n";
 		}
 		if (c == 116) {// t: open file
@@ -320,39 +324,62 @@ int main(int argc, char **argv){
 					cout << "Data written to file\n";
 				}
 		}
+		if(c == 114){ // r: rehome ptu
+			ptumsg.data[0] = 0;
+			ptumsg.data[1] = 0;
+			ptumsg_pub.publish(ptumsg);
+			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0;
+			firstloop_flag = false;
+			PTUcontrol = false;
+			ptuhomemsg.data = true;
+			ptuhomemsg_pub.publish(ptuhomemsg);
+		}
 		// set focus msg
 		focusmsg.data = focusmeasure;
 		// set ptu msg
 		if(PTUcontrol){
 		ptumsg.data[0] = u1;
 		ptumsg.data[1] = u2;
-		loopCounter++;
-		cout<< loopCounter<< "\n";
+		//loopCounter++;
+		//cout<< loopCounter<< "\n";
 		}
 		else{
 		ptumsg.data[0] = 0;
 		ptumsg.data[1] = 0;
 		}
 		// set zoom msg
-		if(detect_flag){
+		if(detectflag){
 			loopcounterzoom++;
 			if(loopcounterzoom > 119)zoomaverage +=tside;
 			if(loopcounterzoom > 149){
-				zoomaverage /= loopcounterzoom;
-				if(zoomaverage > 110) zoommsg.data+=3;
-				else if (zoomaverage<90) zoommsg.data-=3;
-				zoomaverage=0, loopcounterzoom = 0;
+				zoomaverage /= loopcounterzoom-119;
+				if(zoomaverage > 210){
+					zoommsg.data+=3;
+					zoommsg.data-=3;
+				}
+				if (zoomaverage<200) {
+					zoommsg.data-=3;
+				}
+				loopcounterzoom = 0;
+				zoomaverage=0,
 				zoommsg.data = min((int)zoommsg.data,(int)170);
 				zoommsg.data = max((int)zoommsg.data,(int)10);
 				zoom_pub.publish(zoommsg);
 			}
-		
 		}
+		else {
+			loopcounterzoom = 0;
+			zoommsg.data = 170;
+		}
+		// set detect msg
+		detectmsg.data = detectflag;
+
 
 
 		// publish
 		ptumsg_pub.publish(ptumsg);
 		focus_pub.publish(focusmsg);
+		detect_pub.publish(detectmsg);
 
 	}
 	return 0;
