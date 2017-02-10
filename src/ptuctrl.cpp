@@ -38,26 +38,16 @@ bool firstloop_flag = false;
 bool firstUse = false;
 int loopCounter = 0;
 void ptuCallback(const std_msgs::Float64MultiArray::ConstPtr& ptumsg){
-	gettimeofday(&t2, NULL);
-	elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
-	elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+//	gettimeofday(&t2, NULL);
+//	elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+//	elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
 	//cout << elapsedTime << " ms.\n";
-	gettimeofday(&t1, NULL);
-	gettimeofday(&t1, NULL);
-	panSpeed = ptumsg->data[0];
-	tiltSpeed = ptumsg->data[1];
+//	gettimeofday(&t1, NULL);
+//	gettimeofday(&t1, NULL);
+	panSpeed = floor(ptumsg->data[0]);
+	tiltSpeed = floor(ptumsg->data[1]);
+
 	ptu_set_desired_velocities(panSpeed, tiltSpeed);
-	if(panSpeed && tiltSpeed == 0){
-		zerocounter++;
-		if(zerocounter>30){
-			zerocounter =0;
-			val = 1000;
-			ptu_set_desired_velocities(val, val);
-			set_desired_abs_positions(&panZero,&tiltZero);
-			await_completion();
-		}
-	}
-	else zerocounter =  0;
 }
 
 void ptuHomeCallback(const std_msgs::Bool::ConstPtr& ptuhomemsg){

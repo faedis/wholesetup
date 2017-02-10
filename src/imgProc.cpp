@@ -61,7 +61,7 @@ ofstream myfile;
 bool writeData;
 int filenumber = 0;
 struct timeval t1, t2;
-double elapsedTime;
+double elapsedTime, timebegin;
 vector<double> timeVec;
 vector<double> eVec;
 vector<double> uVec;
@@ -101,8 +101,8 @@ void DetectColor(Mat frame) {
 		}
 		else {
 			firstloop_flag = true;
-			u1 = -(Kp*e1 + Ki*ie1) / pRes;
-			u2 = -(Kp*e2 + Ki*ie2)/ tRes;
+			u1 = -(Kp*e1) / pRes;
+			u2 = -(Kp*e2)/ tRes;
 		}
 //		cout <<targetRect.x << " " <<targetRect.y<< " "  << targetRect.width+targetRect.x<< " "  << targetRect.height+targetRect.y << "\n";
 		detectflag = true;
@@ -149,14 +149,18 @@ void PTUSpeedControl() {
 	}
 	else if (abs(u2) > 10000) u2 = copysign(10000, u2);
 	u2 = 0;
-	gettimeofday(&t2, NULL);
-	elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
-	elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
-	timeVec.push_back(elapsedTime);
-	eVec.push_back(e1);
-	uVec.push_back(u1);
-	iVec.push_back(ie1);
-	dVec.push_back(de1);
+
+	if(PTUcontrol){
+		gettimeofday(&t2, NULL);
+		elapsedTime = (t2.tv_sec - t1.tv_sec)*1000;      // sec to ms
+		elapsedTime += (t2.tv_usec - t1.tv_usec)/1000;   // us to ms
+		//cout << setprecision(14) <<elapsedTime << "\n";
+		timeVec.push_back(elapsedTime);
+		eVec.push_back(e1);
+		uVec.push_back(u1);
+		iVec.push_back(ie1);
+		dVec.push_back(de1);
+	}
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -224,10 +228,7 @@ int main(int argc, char **argv){
 
 	while(true){	
 
-
-
   		//cout << elapsedTime << " ms.\n";
-		gettimeofday(&t1, NULL);
 	
 		cap>>frame;
 		cvtColor(frame, grayframe, CV_BGR2GRAY);
@@ -255,7 +256,9 @@ int main(int argc, char **argv){
 		if(c == 27) break;
 		if(c == 115){ //s: start ptu control
 			PTUcontrol ^= true;
-		gettimeofday(&t1, NULL);
+			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0;
+			firstloop_flag = false;
+			gettimeofday(&t1, NULL);
 		}
 		if(c == 112){ // p: set new gain
 			ptumsg.data[0] = 0;
@@ -281,7 +284,7 @@ int main(int argc, char **argv){
 			cout << "\n New PID is: " << Kp << " " <<  Ki<< " "<< Kd<<"\n";
 		}
 
-		if(c == 112){ // p 
+		if(c == 105){ // p 
 			ptumsg.data[0] = 0;
 			ptumsg.data[1] = 0;
 			ptumsg_pub.publish(ptumsg);
@@ -297,7 +300,7 @@ int main(int argc, char **argv){
 			if (writeData) {
 				if (myfile.is_open()) myfile.close();
 				stringstream ss;
-				ss << "PanP" << Kp << "Ki" << Ki << "Kd" << Kd << "_" <<setfill('0')<<setw(3)<< filenumber <<".txt";
+				ss << "PanKp" << Kp << "Ki" << Ki << "Kd" << Kd << "_" <<setfill('0')<<setw(3)<< filenumber <<".txt";
 				string filename = ss.str();
 				myfile.open(filename.c_str());
 				timeVec.clear();
@@ -315,7 +318,7 @@ int main(int argc, char **argv){
 		}
 		if (c == 119) {// w: write data to file
 				for (int i = 0; i < timeVec.size(); i++) {
-					myfile << setprecision(8) << timeVec[i] << "," <<
+					myfile << setprecision(14) << timeVec[i] << "," <<
 						//setprecision(8) << dtimeVec[i] << "," <<
 						setprecision(8) << eVec[i] << "," <<
 						setprecision(8) << uVec[i] << "," <<
