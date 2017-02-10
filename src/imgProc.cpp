@@ -11,6 +11,8 @@
 #include "opencv2/tracking.hpp"
 #include <sstream>
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 #include <sys/time.h>
 
 
@@ -53,6 +55,17 @@ double u2;	// tilt input
 double tside; 	// target rect side length
 double zoomaverage =0;
 double loopcounterzoom = 0;
+// write to file variables:
+ofstream myfile;
+bool writeData;
+int filenumber = 0;
+struct timeval t1, t2;
+double elapsedTime;
+vector<double> timeVec;
+vector<double> eVec;
+vector<double> uVec;
+vector<double> iVec;
+vector<double> dVec;
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Detector
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -134,6 +147,15 @@ void PTUSpeedControl() {
 		}
 	}
 	else if (abs(u2) > 10000) u2 = copysign(10000, u2);
+	u2 = 0;
+	gettimeofday(&t2, NULL);
+	elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+	elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+	timeVec.push_back(elapsedTime);
+	eVec.push_back(e1);
+	uVec.push_back(u1);
+	iVec.push_back(ie1);
+	dVec.push_back(de1);
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -193,15 +215,12 @@ int main(int argc, char **argv){
 	cap.set(CAP_PROP_FRAME_WIDTH,frWidth);
 	long int frCounter = 0;
 
-	struct timeval t1, t2;
-    	double elapsedTime;
+
 	int loopCounter = 0;
-	gettimeofday(&t1, NULL);
+
 	while(true){	
 
-		gettimeofday(&t2, NULL);
-		elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
-    		elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+
     		//cout << elapsedTime << " ms.\n";
 		gettimeofday(&t1, NULL);
 	
@@ -231,17 +250,75 @@ int main(int argc, char **argv){
 		if(c == 27) break;
 		if(c == 115){
 			PTUcontrol ^= true;
+		gettimeofday(&t1, NULL);
 		}
-		if(c == 112){
+		if(c == 112){ // p: set new gain
 			ptumsg.data[0] = 0;
 			ptumsg.data[1] = 0;
 			ptumsg_pub.publish(ptumsg);
 			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0;
 			firstloop_flag = false;
 			PTUcontrol = false;
-			cout << "Please enter the desired gain (double, now: " << Kp << " ): \n";
+			cout << "Please enter the desired gain (double, now: " << Kp << " ) \n";
 			cin >> Kp;
-			cout << "\n New gain is: " << Kp << "\n";
+			cout << "\n New PID is: " << Kp << " " <<  Ki<< " "<< Kd<<"\n";
+		}
+		if(c == 100){ // d: set new diff gain
+			ptumsg.data[0] = 0;
+			ptumsg.data[1] = 0;
+			ptumsg_pub.publish(ptumsg);
+			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0;
+			firstloop_flag = false;
+			PTUcontrol = false;
+			cout << "Please enter the desired differentiator gain (double, now: " << Kd << " )\n";
+
+			cin >> Kp;
+			cout << "\n New PID is: " << Kp << " " <<  Ki<< " "<< Kd<<"\n";
+		}
+		if(c == 105){ // i: set new integrator gain
+			ptumsg.data[0] = 0;
+			ptumsg.data[1] = 0;
+			ptumsg_pub.publish(ptumsg);
+			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0;
+			firstloop_flag = false;
+			PTUcontrol = false;
+			cout << "Please enter the desired integrator gain (double): \n";
+ 
+
+			cin >> Kp;
+			cout << "\n New PID is: " << Kp << " " <<  Ki<< " "<< Kd<<"\n";
+		}
+		if (c == 116) {// t: open file
+			writeData ^= true;
+			if (writeData) {
+				if (myfile.is_open()) myfile.close();
+				stringstream ss;
+				ss << "PanP" << Kp << "Ki" << Ki << "Kd" << Kd << "_" <<setfill('0')<<setw(3)<< filenumber <<".txt";
+				string filename = ss.str();
+				myfile.open(filename.c_str());
+				timeVec.clear();
+				eVec.clear();
+				uVec.clear();
+				iVec.clear();
+				dVec.clear();
+				cout << "file " << ss.str() << " opened\n";
+				filenumber++;
+			}
+			else {
+				myfile.close();
+				cout << "file closed\n";
+			}
+		}
+		if (c == 119) {// w: write data to file
+				for (int i = 0; i < timeVec.size(); i++) {
+					myfile << setprecision(8) << timeVec[i] << "," <<
+						//setprecision(8) << dtimeVec[i] << "," <<
+						setprecision(8) << eVec[i] << "," <<
+						setprecision(8) << uVec[i] << "," <<
+						setprecision(8) << iVec[i] << "," <<
+						setprecision(8) << dVec[i] << "\n";
+					cout << "Data written to file\n";
+				}
 		}
 		// set focus msg
 		focusmsg.data = focusmeasure;
