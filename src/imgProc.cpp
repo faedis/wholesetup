@@ -62,7 +62,7 @@ ofstream myfile;
 bool writeData;
 int filenumber = 0;
 struct timeval t1, t2;
-double elapsedTime;
+double elapsedTime, timebegin;
 vector<double> timeVec;
 vector<double> eVec;
 vector<double> uVec;
@@ -152,6 +152,7 @@ void PTUSpeedControl() {
 	}
 	else if (abs(u2) > 10000) u2 = copysign(10000, u2);
 	u2 = 0;
+
 	if(PTUcontrol){
 		gettimeofday(&t2, NULL);
 		elapsedTime = (t2.tv_sec - t1.tv_sec)*1000;      // sec to ms
@@ -238,10 +239,9 @@ int main(int argc, char **argv){
 	int loopCounter = 0;
 
 	while(true){	
+
 		ros::spinOnce(); //  for callbacks
 
-
-  		//cout << elapsedTime << " ms.\n";
 		cap>>frame;
 		cvtColor(frame, grayframe, CV_BGR2GRAY);
 		DetectColor(frame);
