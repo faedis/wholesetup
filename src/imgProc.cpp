@@ -56,6 +56,7 @@ double u2;	// tilt input
 double tside; 	// target rect side length
 double zoomaverage =0;
 double loopcounterzoom = 0;
+double measuredPan = 0, measuredTilt = 0;
 // write to file variables:
 ofstream myfile;
 bool writeData;
@@ -67,6 +68,8 @@ vector<double> eVec;
 vector<double> uVec;
 vector<double> iVec;
 vector<double> dVec;
+vector<double> panposVec;
+vector<double> tiltposVec;
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Detector
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -160,6 +163,8 @@ void PTUSpeedControl() {
 		uVec.push_back(u1);
 		iVec.push_back(ie1);
 		dVec.push_back(de1);
+		panposVec.push_back(measuredPan);
+		tiltposVec.push_back(measuredTilt);
 	}
 }
 
@@ -188,6 +193,13 @@ float LaplaceVarFocus(Mat inputFrame) {
 }
 
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// PTU Poistion Callback
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+void ptuPosCallback(const std_msgs::Float64MultiArray::ConstPtr& ptuposmsg){
+	measuredPan = ptuposmsg->data[0] * pRes;
+	measuredTilt = ptuposmsg->data[1] * tRes;
+}
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // main()
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 int main(int argc, char **argv){
@@ -200,7 +212,7 @@ int main(int argc, char **argv){
 	ros::Publisher zoom_pub = n.advertise<std_msgs::Int16>("zoommsg",1);
 	ros::Publisher detect_pub = n.advertise<std_msgs::Bool>("detectmsg",1);
 	ros::Publisher ptuhomemsg_pub = n.advertise<std_msgs::Bool>("ptuhomemsg",1);
-
+	ros::Subscriber ptupos_sub = n.subscribe("ptuposmsg",1,ptuPosCallback);
 	std_msgs::Bool ptuhomemsg;	
 	std_msgs::Bool detectmsg;
 	std_msgs::Float64 focusmsg;
@@ -228,8 +240,8 @@ int main(int argc, char **argv){
 
 	while(true){	
 
-  		//cout << elapsedTime << " ms.\n";
-	
+		ros::spinOnce(); //  for callbacks
+
 		cap>>frame;
 		cvtColor(frame, grayframe, CV_BGR2GRAY);
 		DetectColor(frame);
@@ -308,6 +320,8 @@ int main(int argc, char **argv){
 				uVec.clear();
 				iVec.clear();
 				dVec.clear();
+				panposVec.clear();
+				tiltposVec.clear();
 				cout << "file " << ss.str() << " opened\n";
 				filenumber++;
 			}
@@ -323,9 +337,11 @@ int main(int argc, char **argv){
 						setprecision(8) << eVec[i] << "," <<
 						setprecision(8) << uVec[i] << "," <<
 						setprecision(8) << iVec[i] << "," <<
-						setprecision(8) << dVec[i] << "\n";
-					cout << "Data written to file\n";
+						setprecision(8) << dVec[i] << "," <<
+						setprecision(12) << panposVec[i] << "," <<
+						setprecision(12) << tiltposVec[i] << "\n";
 				}
+				cout << "Data written to file\n";
 		}
 		if(c == 114){ // r: rehome ptu
 			ptumsg.data[0] = 0;
