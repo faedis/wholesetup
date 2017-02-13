@@ -22,50 +22,66 @@ using namespace std;
 
 struct timeval t1, t2;
 double elapsedTime;
-
-	
-	
-
-
-
-
-
 signed short int panSpeed, tiltSpeed, val, panZero = 0, tiltZero=0;
 signed short int maxPos = 0;
+signed short pPos = 0;
+signed short tPos = 0;
+signed short* pPtr = &pPos;
+signed short* tPtr = &tPos;
 
-int zerocounter = 0;
 bool firstloop_flag = false;
 bool firstUse = false;
 int loopCounter = 0;
-void ptuCallback(const std_msgs::Float64MultiArray::ConstPtr& ptumsg){
-	gettimeofday(&t2, NULL);
-	elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
-	elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
-	//cout << elapsedTime << " ms.\n";
-	gettimeofday(&t1, NULL);
-	gettimeofday(&t1, NULL);
-	panSpeed = ptumsg->data[0];
-	tiltSpeed = ptumsg->data[1];
-	ptu_set_desired_velocities(panSpeed, tiltSpeed);
-	if(panSpeed && tiltSpeed == 0){
-		zerocounter++;
-		if(zerocounter>30){
-			zerocounter =0;
-			val = 1000;
-			ptu_set_desired_velocities(val, val);
-			set_desired_abs_positions(&panZero,&tiltZero);
-			await_completion();
-		}
-	}
-	else zerocounter =  0;
-}
+	
+	
 
-void ptuHomeCallback(const std_msgs::Bool::ConstPtr& ptuhomemsg){
-			val = 1000;
-			ptu_set_desired_velocities(val, val);
-			set_desired_abs_positions(&panZero,&tiltZero);
-			await_completion();
-}
+class subAndpub{
+public:
+	subAndpub(){
+		pub_ = n_.advertise<std_msgs::Float64MultiArray>("ptuposmsg",1);
+		
+		sub_ctrl = n_.subscribe("ptumsg",1,&subAndpub::ptuCallback,this);
+		sub_home = n_.subscribe("ptuhomemsg",1,&subAndpub::ptuHomeCallback,this);
+	}
+
+	void ptuCallback(const std_msgs::Float64MultiArray::ConstPtr& ptumsg){
+		//gettimeofday(&t2, NULL);
+		//elapsedTime = (t2.tv_sec - t1.tv_sec) * 1000.0;      // sec to ms
+		//elapsedTime += (t2.tv_usec - t1.tv_usec) / 1000.0;   // us to ms
+		//cout << elapsedTime << " ms.\n";
+		//gettimeofday(&t1, NULL);
+		//gettimeofday(&t1, NULL);
+		panSpeed = floor(ptumsg->data[0]);
+		tiltSpeed = floor(ptumsg->data[1]);
+		ptu_set_desired_velocities(panSpeed, tiltSpeed);
+		get_current_positions(pPtr,tPtr);
+		std_msgs::Float64MultiArray ptuposmsg;
+		ptuposmsg.data.resize(2);
+		ptuposmsg.data[0] = *pPtr;
+		ptuposmsg.data[1] = *tPtr;
+		pub_.publish(ptuposmsg);
+	}
+
+	void ptuHomeCallback(const std_msgs::Bool::ConstPtr& ptuhomemsg){
+		val = 1000;
+		ptu_set_desired_velocities(val, val);
+		set_desired_abs_positions(&panZero,&tiltZero);
+		await_completion();
+	}
+private:
+	ros::NodeHandle n_;
+	ros::Publisher pub_;
+	ros::Subscriber sub_ctrl;
+	ros::Subscriber sub_home;
+};
+
+
+//
+
+
+
+
+
 
 int main( int argc, char** argv ) {
 	// Set up PTU +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -166,9 +182,7 @@ int main( int argc, char** argv ) {
 	}
 	gettimeofday(&t1, NULL);
 	ros::init(argc, argv, "ptuctrl_node");
-	ros::NodeHandle n;
-	ros::Subscriber ptusub = n.subscribe("ptumsg",1,ptuCallback);
-	ros::Subscriber ptuhomesub = n.subscribe("ptuhomemsg",1,ptuHomeCallback);
+	subAndpub SAPObject;
 	ros::spin();
 
 
