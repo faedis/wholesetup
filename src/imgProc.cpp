@@ -38,8 +38,8 @@ double Ki = 0;
 double Kd = 0;
 double pRes = 46.2857 / 3600 * M_PI / 180; // rad per position
 double tRes = 11.5714 / 3600 * M_PI / 180; // rad per position
-double alpha1 = 0.121884776;	// rad width angle for f = 75mm, look-up table needed
-double alpha2 = 0.0687929976;	// rad width angle for f = 75mm
+double alpha1 = 0.079555;	// rad width angle for f  ca 80 mm, look-up table needed wrong previous alpha1 = 0.121884776
+double alpha2 = 0.044814;	// rad width angle for f ca 80 , look up table needed. wrong previous alpha2 = 0.0687929976
 double e1,	// error phi target-camera
 e2,		// error theta target-camera
 ie1 = 0,	// integral error phi
@@ -90,6 +90,8 @@ void DetectColor(Mat frame) {
 		double tArea = frameMom.m00;
 		tside = sqrt(tArea);
 		target = Point(frameMom.m10 / tArea, frameMom.m01 / tArea);
+		oe1 = e1;
+		oe2 = e2;
 		e1 = alpha1 * (double)(target.x - cWidth)/(double)cWidth;	//atan((target.x - cWidth)*tan(alpha1) / cWidth);
 		e2 = alpha2 * (double)(target.y - cHeight)/(double)cHeight;	//atan((target.y - cHeight)*tan(alpha2) / cHeight);
 		ie1 += e1*dt;
@@ -100,7 +102,7 @@ void DetectColor(Mat frame) {
 		rectangle(frame, targetRect, Scalar(0, 0, 255), 2, 8, 0);
 		if (firstloop_flag) {
 			u1 = -(Kp*e1 + Ki*ie1 + Kd*de1) / pRes;
-			u2 = -(Kp*e2 + Kd*de2) / tRes;
+			u2 = -(Kp*e2 + Ki*ie2 + Kd*de2) / tRes;
 		}
 		else {
 			firstloop_flag = true;
@@ -117,6 +119,8 @@ void DetectColor(Mat frame) {
 		de2 = 0;
 		ie1 = 0;
 		ie2 = 0;
+		oe1 = 0;
+		oe2 = 0;
 		u1 = 0 ;
 		u2 = 0;
 		firstloop_flag = false;
@@ -143,7 +147,7 @@ void PTUSpeedControl() {
 	else if (abs(u1) > 10000) u1 = copysign(10000, u1);
 	//u2	
 	if (abs(u2) < 240) {
-		if (abs(e2) > 4*0.00244) { // 0.0174533 corresponds to 1deg, 0.03491, 0.00244 = 0.14deg
+		if (abs(e2) > 0.00244) { // 0.0174533 corresponds to 1deg, 0.03491, 0.00244 = 0.14deg
 			u2 = copysign(240, u2);
 		}
 		else {
@@ -151,9 +155,8 @@ void PTUSpeedControl() {
 		}
 	}
 	else if (abs(u2) > 10000) u2 = copysign(10000, u2);
-	u2 = 0;
 
-	if(PTUcontrol){
+	if(PTUcontrol&&writeData){
 		gettimeofday(&t2, NULL);
 		elapsedTime = (t2.tv_sec - t1.tv_sec)*1000;      // sec to ms
 		elapsedTime += (t2.tv_usec - t1.tv_usec)/1000;   // us to ms
@@ -347,7 +350,7 @@ int main(int argc, char **argv){
 			ptumsg.data[0] = 0;
 			ptumsg.data[1] = 0;
 			ptumsg_pub.publish(ptumsg);
-			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0;
+			e1 = 0; e2 = 0; de1 = 0; de2 = 0, ie1=0,ie2=0, oe1 = 0, oe2=0;
 			firstloop_flag = false;
 			PTUcontrol = false;
 			ptuhomemsg.data = true;
