@@ -127,7 +127,7 @@ int main( int argc, char** argv ) {
 		// tilt reg move power, tilt min pos, t max pos, p m pos,
 		// p x pos, user limits enabled, disable reset on restart,
 		//t acc, p acc, p upper speed limit, t u s l
-		if (SerialStringOut(COMstream, (unsigned char *)"TMR TNU-1000 TXU9000 PNU-3000 PXU3000 LU RD TA200000 PA200000 PU10000 TU10000 ") != TRUE) {
+		if (SerialStringOut(COMstream, (unsigned char *)"TMR TNU-1000 TXU9000 PNU-3000 PXU3000 LU RD TA200000 PA50000 PU10000 TU10000 ") != TRUE) {
 			cout << "2nd Serial command not sent to PTU \n";
 		}
 		cout << "Wait until PTU has stopped and then enter a key! \n";
